@@ -1,2 +1,4 @@
+/test_data/*
+/.vscode
 /target
 **/*.rs.bk
