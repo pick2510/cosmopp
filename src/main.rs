@@ -9,9 +9,38 @@ use std::{vec,string,str};
 use clap::{Arg, App, SubCommand};
 use glob::{glob, Paths};
 
+fn write_variables(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String>{
+    
+    Ok(())
+}
 
 
-fn process_file(ipath: &str, opath: &str) -> i32 {
+fn write_dimensions(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
+    for (name,dim) in &ifile.root.dimensions {
+        match ofile.root.add_dimension(&dim.name, dim.len){
+            Err(e)=> return Err(e),
+            Ok(()) => {}
+        };
+        }
+
+    Ok(())
+}
+
+fn write_global_attributes(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
+    for (name,attr) in &ifile.root.attributes{
+        let cont = match attr.attrtype {
+            NC_CHAR => attr.get_char(false).unwrap()
+        };
+        match ofile.root.add_attribute(name, cont){
+            Err(e) => return Err(e),
+            _ => {}
+        };
+    }
+    Ok(())
+}
+
+
+fn process_file(ipath: &str, opath: &str) -> Result<(), String> {
     let mut ifile = match netcdf::open(ipath){
         Ok(ifile)=>ifile,
         Err(e) => panic!("No netcdf file: {:?}", ipath)
@@ -21,14 +50,19 @@ fn process_file(ipath: &str, opath: &str) -> i32 {
         Ok(ofile) => ofile,
         Err(e) => panic!("Couldn't create file {:?}", opath)
     };
-    let ldims = ifile.root.dimensions.len();
-    let lats = ifile.root.variables.get("rlat").unwrap().get_float(false).unwrap();
-    let lons = ifile.root.variables.get("rlon").unwrap().get_float(false).unwrap();
-    let times = ifile.root.variables.get("time").unwrap().get_double(false).unwrap();
+    match write_global_attributes(&ifile, &mut ofile){
+        Ok(n) => println!("Wrote global variables"),
+        Err(e) => panic!("Something went wrong!")
+    };
+    match write_dimensions(&ifile, &mut ofile){
+        Ok(n) => println!("Defined dims..."),
+        Err(e) => panic!("Something went wrong!")
+    };
+
 
  //   let latsdata: Vec<f32> = lats.get_float(false).unwrap();
-    println!("{:?}", times);
-    1
+  
+    Ok(())
 }
 
 
@@ -63,7 +97,7 @@ fn main() {
         ofile.push_str(parent_path.as_str());
         ofile.push_str("/");
         ofile.push_str(file_without_ext.as_str());
-        ofile.push_str("_destaggered.nc");
+        ofile.push_str("_destag.nc");
         let mut res = process_file(entry.to_str().unwrap(), ofile.as_str()); 
     }
 
