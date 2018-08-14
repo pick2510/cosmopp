@@ -2,12 +2,16 @@
 extern crate clap;
 extern crate glob;
 extern crate netcdf;
+extern crate netcdf_sys;
 
 extern crate ndarray;
 use clap::{App, Arg};
 use glob::{glob, Paths};
 use ndarray::ArrayD;
 use std::{str, string, vec};
+use netcdf_sys::NC_FLOAT;
+
+
 
 fn write_attributes(
     ofile: &mut netcdf::file::File,
@@ -25,7 +29,7 @@ fn write_attributes(
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&name, attr.get_byte(false).unwrap_or(1))
-            .unwrap(),
+            ?,
         2 => ofile
             .root
             .variables
@@ -36,42 +40,42 @@ fn write_attributes(
                 attr.get_char(false)
                     .unwrap_or("Couldn't read attribute...".to_string()),
             )
-            .unwrap(),
+            ?,
         3 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&attr.name, attr.get_short(false).unwrap_or(1))
-            .unwrap(),
+            ?,
         4 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&attr.name, attr.get_int(false).unwrap_or(-999))
-            .unwrap(),
+            ?,
         5 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&attr.name, attr.get_float(false).unwrap_or(-9e30))
-            .unwrap(),
+            ?,
         6 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&attr.name, attr.get_double(false).unwrap_or(-9e30))
-            .unwrap(),
+            ?,
         8 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
             .add_attribute(&attr.name, attr.get_ushort(false).unwrap_or(1))
-            .unwrap(),
+            ?,
         _ => {}
     }
 
@@ -104,11 +108,10 @@ fn write_variable(
             } else {
                 ofile
                     .root
-                    .add_variable(name, dimvec, &invar.get_byte(false).unwrap())
-                    .unwrap();
+                    .add_variable(name, dimvec, &invar.get_byte(false).unwrap())?
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).unwrap();
+                write_attributes(ofile, attr, &k, &invar)?
             }
         }
         3 => {
@@ -130,34 +133,29 @@ fn write_variable(
             } else {
                 ofile
                     .root
-                    .add_variable(name, dimvec, &invar.get_short(false).unwrap())
-                    .unwrap();
+                    .add_variable(name, dimvec, &invar.get_short(false).unwrap())?
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).unwrap();
+                write_attributes(ofile, attr, &k, &invar)?
             }
         }
         4 => {
             if invar.attributes.contains_key("_FillValue") {
-                ofile
-                    .root
-                    .add_variable_with_fill_value(
-                        name,
-                        dimvec,
-                        &invar.get_int(false).unwrap(),
-                        invar
-                            .attributes
-                            .get("_FillValue")
-                            .unwrap()
-                            .get_int(false)
-                            .unwrap(),
-                    )
-                    .unwrap();
+                ofile.root.add_variable_with_fill_value(
+                    name,
+                    dimvec,
+                    &invar.get_int(false).unwrap(),
+                    invar
+                        .attributes
+                        .get("_FillValue")
+                        .unwrap()
+                        .get_int(false)
+                        .unwrap_or(-999),
+                )?
             } else {
                 ofile
                     .root
-                    .add_variable(name, dimvec, &invar.get_int(false).unwrap())
-                    .unwrap();
+                    .add_variable(name, dimvec, &invar.get_int(false).unwrap())?
             }
 
             for (k, attr) in &invar.attributes {
@@ -166,20 +164,17 @@ fn write_variable(
         }
         5 => {
             if invar.attributes.contains_key("_FillValue") {
-                ofile
-                    .root
-                    .add_variable_with_fill_value(
-                        name,
-                        dimvec,
-                        &invar.get_float(false).unwrap(),
-                        invar
-                            .attributes
-                            .get("_FillValue")
-                            .unwrap()
-                            .get_float(false)
-                            .unwrap_or(-9e-20),
-                    )
-                    .unwrap();
+                ofile.root.add_variable_with_fill_value(
+                    name,
+                    dimvec,
+                    &invar.get_float(false).unwrap(),
+                    invar
+                        .attributes
+                        .get("_FillValue")
+                        .unwrap()
+                        .get_float(false)
+                        .unwrap_or(-9e-20),
+                )?
             } else {
                 ofile
                     .root
@@ -187,52 +182,45 @@ fn write_variable(
                     .unwrap();
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).unwrap();
+                write_attributes(ofile, attr, &k, &invar)?
             }
         }
         6 => {
             if invar.attributes.contains_key("_FillValue") {
-                ofile
-                    .root
-                    .add_variable_with_fill_value(
-                        name,
-                        dimvec,
-                        &invar.get_double(false).unwrap(),
-                        invar
-                            .attributes
-                            .get("_FillValue")
-                            .unwrap()
-                            .get_double(false)
-                            .unwrap_or(-9e-20),
-                    )
-                    .unwrap();
+                ofile.root.add_variable_with_fill_value(
+                    name,
+                    dimvec,
+                    &invar.get_double(false).unwrap(),
+                    invar
+                        .attributes
+                        .get("_FillValue")
+                        .unwrap()
+                        .get_double(false)
+                        .unwrap_or(-9e-20),
+                )?
             } else {
                 ofile
                     .root
-                    .add_variable(name, dimvec, &invar.get_double(false).unwrap())
-                    .unwrap();
+                    .add_variable(name, dimvec, &invar.get_double(false).unwrap())?;
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).unwrap();
+                write_attributes(ofile, attr, &k, &invar)?
             }
         }
 
         8 => {
             if invar.attributes.contains_key("_FillValue") {
-                ofile
-                    .root
-                    .add_variable_with_fill_value(
-                        name,
-                        dimvec,
-                        &invar.get_ushort(false).unwrap(),
-                        invar
-                            .attributes
-                            .get("_FillValue")
-                            .unwrap()
-                            .get_ushort(false)
-                            .unwrap_or(999),
-                    )
-                    .unwrap();
+                ofile.root.add_variable_with_fill_value(
+                    name,
+                    dimvec,
+                    &invar.get_ushort(false).unwrap(),
+                    invar
+                        .attributes
+                        .get("_FillValue")
+                        .unwrap()
+                        .get_ushort(false)
+                        .unwrap_or(999),
+                )?;
             } else {
                 ofile
                     .root
@@ -256,10 +244,7 @@ fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> R
         for dim in &var.dimensions {
             dimvec.push(dim.name.clone());
         }
-        match write_variable(ofile, &dimvec, var, k) {
-            Ok(()) => {}
-            Err(n) => return Err(n),
-        }
+        write_variable(ofile, &dimvec, var, k)?
     }
     Ok(())
 }
