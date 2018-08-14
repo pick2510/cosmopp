@@ -91,24 +91,24 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_byte(false).unwrap(),
                         invar
                             .attributes
                             .get("_FillValue")
                             .unwrap()
                             .get_byte(false)
-                            .unwrap(),
+                            .unwrap_or(-1),
                     )
                     .unwrap();
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_byte(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_byte(false).unwrap())
                     .unwrap();
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
         3 => {
@@ -117,24 +117,24 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_short(false).unwrap(),
                         invar
                             .attributes
                             .get("_FillValue")
                             .unwrap()
                             .get_short(false)
-                            .unwrap(),
+                            .unwrap_or(-999),
                     )
                     .unwrap();
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_short(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_short(false).unwrap())
                     .unwrap();
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
         4 => {
@@ -143,7 +143,7 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_int(false).unwrap(),
                         invar
                             .attributes
@@ -156,12 +156,12 @@ fn write_variable(
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_int(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_int(false).unwrap())
                     .unwrap();
             }
 
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
         5 => {
@@ -170,24 +170,24 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_float(false).unwrap(),
                         invar
                             .attributes
                             .get("_FillValue")
                             .unwrap()
                             .get_float(false)
-                            .unwrap(),
+                            .unwrap_or(-9e-20),
                     )
                     .unwrap();
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_float(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_float(false).unwrap())
                     .unwrap();
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
         6 => {
@@ -196,24 +196,24 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_double(false).unwrap(),
                         invar
                             .attributes
                             .get("_FillValue")
                             .unwrap()
                             .get_double(false)
-                            .unwrap(),
+                            .unwrap_or(-9e-20),
                     )
                     .unwrap();
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_double(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_double(false).unwrap())
                     .unwrap();
             }
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
 
@@ -223,25 +223,25 @@ fn write_variable(
                     .root
                     .add_variable_with_fill_value(
                         name,
-                        &dimvec,
+                        dimvec,
                         &invar.get_ushort(false).unwrap(),
                         invar
                             .attributes
                             .get("_FillValue")
                             .unwrap()
                             .get_ushort(false)
-                            .unwrap(),
+                            .unwrap_or(999),
                     )
                     .unwrap();
             } else {
                 ofile
                     .root
-                    .add_variable(name, &dimvec, &invar.get_ushort(false).unwrap())
+                    .add_variable(name, dimvec, &invar.get_ushort(false).unwrap())
                     .unwrap();
             }
 
             for (k, attr) in &invar.attributes {
-                write_attributes(ofile, attr, &k, &invar).or(Err("Stop"));
+                write_attributes(ofile, attr, &k, &invar).unwrap();
             }
         }
         _ => {}
@@ -249,16 +249,19 @@ fn write_variable(
     Ok(())
 }
 
-fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) {
+fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
     for (k, var) in &ifile.root.variables {
         println!("Working on {}", k);
         let mut dimvec = vec![];
-        let mut destag = false;
         for dim in &var.dimensions {
             dimvec.push(dim.name.clone());
         }
-        write_variable(ofile, &dimvec, var, k).unwrap();
+        match write_variable(ofile, &dimvec, var, k) {
+            Ok(()) => {}
+            Err(n) => return Err(n),
+        }
     }
+    Ok(())
 }
 
 fn write_dimensions(
@@ -266,19 +269,11 @@ fn write_dimensions(
     ofile: &mut netcdf::file::File,
 ) -> Result<(), String> {
     for (name, dim) in &ifile.root.dimensions {
-        if name == "time" {
-            match ofile.root.add_dimension(&dim.name, 0) {
-                Err(e) => return Err(e),
-                Ok(()) => {}
-            };
-        } else {
-            match ofile.root.add_dimension(&dim.name, dim.len) {
-                Err(e) => return Err(e),
-                Ok(()) => {}
-            };
-        }
+        match ofile.root.add_dimension(&dim.name, dim.len) {
+            Err(e) => return Err(e),
+            Ok(()) => {}
+        };
     }
-
     Ok(())
 }
 
@@ -289,28 +284,40 @@ fn write_global_attributes(
     for (name, attr) in &ifile.root.attributes {
         match attr.attrtype {
             1 => {
-                let cont = attr.get_byte(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont);
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_byte(false).unwrap())
+                    .unwrap();
             }
             2 => {
-                let cont = attr.get_char(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont);
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_char(false).unwrap())
+                    .unwrap();
             }
             3 => {
-                let cont = attr.get_short(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont).unwrap();
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_short(false).unwrap())
+                    .unwrap();
             }
             4 => {
-                let cont = attr.get_int(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont).unwrap();
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_int(false).unwrap())
+                    .unwrap();
             }
             5 => {
-                let cont = attr.get_float(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont).unwrap();
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_float(false).unwrap())
+                    .unwrap();
             }
             6 => {
-                let cont = attr.get_double(false).unwrap_or(continue);
-                ofile.root.add_attribute(name, cont).unwrap();
+                ofile
+                    .root
+                    .add_attribute(name, attr.get_double(false).unwrap())
+                    .unwrap();
             }
 
             _ => continue,
@@ -319,27 +326,28 @@ fn write_global_attributes(
     Ok(())
 }
 
-fn process_file(ipath: &str, opath: &str) -> Result<(), String> {
-    let mut ifile = match netcdf::open(ipath) {
+fn process_file(ipath: &str, opath: &str) {
+    let ifile = match netcdf::open(ipath) {
         Ok(ifile) => ifile,
-        Err(e) => panic!("No netcdf file: {:?}", ipath),
+        Err(_) => panic!("No netcdf file: {:?}", ipath),
     };
     println!("{:?} {:?}", ipath, opath);
     let mut ofile = match netcdf::create(opath) {
         Ok(ofile) => ofile,
-        Err(e) => panic!("Couldn't create file {:?}", opath),
+        Err(e) => panic!("Couldn't create file {:?} {:?}", opath, e),
     };
     match write_global_attributes(&ifile, &mut ofile) {
-        Ok(n) => println!("Wrote global variables"),
-        Err(e) => panic!("Something went wrong!"),
+        Ok(()) => println!("Wrote global variables"),
+        Err(e) => panic!("Something went wrong: {}!", e),
     };
     match write_dimensions(&ifile, &mut ofile) {
-        Ok(n) => println!("Defined dims..."),
-        Err(e) => panic!("Something went wrong!"),
+        Ok(()) => println!("Defined dims..."),
+        Err(e) => panic!("Something went wrong: {}!", e),
     };
-    process_vars(&ifile, &mut ofile);
-
-    Ok(())
+    match process_vars(&ifile, &mut ofile) {
+        Ok(()) => println!("Processed vars"),
+        Err(e) => panic!("{}", e),
+    };
 }
 
 fn main() {
@@ -377,6 +385,6 @@ fn main() {
             continue;
         }
         let ofile = tmpfile.replace(".nc", "_destagger.nc");
-        let mut res = process_file(entry.to_str().unwrap(), &ofile);
+        process_file(entry.to_str().unwrap(), &ofile);
     }
 }
