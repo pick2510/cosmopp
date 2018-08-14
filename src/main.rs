@@ -2,15 +2,12 @@
 extern crate clap;
 extern crate glob;
 extern crate netcdf;
-extern crate netcdf_sys;
 
 extern crate ndarray;
 use clap::{App, Arg};
 use glob::{glob, Paths};
-use ndarray::ArrayD;
+use ndarray::{ArrayD, Array4};
 use std::{str, string, vec};
-use netcdf_sys::NC_FLOAT;
-
 
 
 fn write_attributes(
@@ -237,14 +234,31 @@ fn write_variable(
     Ok(())
 }
 
+
+fn destagger_var(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File, var: &netcdf::variable::Variable) -> Result<() , String> {
+    if var.name == "U"{
+        println!("Destaggering U...");
+        let dtime = ifile.root.dimensions.get("time").unwrap().len;
+        let dlat =  ifile.root.dimensions.get("rlat").unwrap().len;
+        let dlon = ifile.root.dimensions.get("dlon").unwrap().len;
+         
+    } 
+    Ok(())
+}
+
+
 fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
     for (k, var) in &ifile.root.variables {
         println!("Working on {}", k);
         let mut dimvec = vec![];
+        if k == "U" || k == "V"{
+            destagger_var(ifile, ofile, var)?
+        } else {
         for dim in &var.dimensions {
             dimvec.push(dim.name.clone());
         }
         write_variable(ofile, &dimvec, var, k)?
+        }
     }
     Ok(())
 }
