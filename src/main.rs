@@ -2,13 +2,12 @@
 extern crate clap;
 extern crate glob;
 extern crate netcdf;
-
+#[macro_use]
 extern crate ndarray;
 use clap::{App, Arg};
 use glob::{glob, Paths};
-use ndarray::{ArrayD, Array4};
+use ndarray::{Array, Array4, ArrayD, ArrayViewD};
 use std::{str, string, vec};
-
 
 fn write_attributes(
     ofile: &mut netcdf::file::File,
@@ -25,8 +24,7 @@ fn write_attributes(
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&name, attr.get_byte(false).unwrap_or(1))
-            ?,
+            .add_attribute(&name, attr.get_byte(false).unwrap_or(1))?,
         2 => ofile
             .root
             .variables
@@ -36,43 +34,37 @@ fn write_attributes(
                 &attr.name,
                 attr.get_char(false)
                     .unwrap_or("Couldn't read attribute...".to_string()),
-            )
-            ?,
+            )?,
         3 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&attr.name, attr.get_short(false).unwrap_or(1))
-            ?,
+            .add_attribute(&attr.name, attr.get_short(false).unwrap_or(1))?,
         4 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&attr.name, attr.get_int(false).unwrap_or(-999))
-            ?,
+            .add_attribute(&attr.name, attr.get_int(false).unwrap_or(-999))?,
         5 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&attr.name, attr.get_float(false).unwrap_or(-9e30))
-            ?,
+            .add_attribute(&attr.name, attr.get_float(false).unwrap_or(-9e30))?,
         6 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&attr.name, attr.get_double(false).unwrap_or(-9e30))
-            ?,
+            .add_attribute(&attr.name, attr.get_double(false).unwrap_or(-9e30))?,
         8 => ofile
             .root
             .variables
             .get_mut(&var.name)
             .unwrap()
-            .add_attribute(&attr.name, attr.get_ushort(false).unwrap_or(1))
-            ?,
+            .add_attribute(&attr.name, attr.get_ushort(false).unwrap_or(1))?,
         _ => {}
     }
 
@@ -234,30 +226,98 @@ fn write_variable(
     Ok(())
 }
 
-
-fn destagger_var(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File, var: &netcdf::variable::Variable) -> Result<() , String> {
-    if var.name == "U"{
+fn destagger_var(
+    ifile: &netcdf::file::File,
+    ofile: &mut netcdf::file::File,
+    var: &netcdf::variable::Variable,
+) -> Result<(), String> {
+    let dtime = ifile.root.dimensions.get("time").unwrap().len;
+    let dlat = ifile.root.dimensions.get("rlat").unwrap().len;
+    let dlon = ifile.root.dimensions.get("rlon").unwrap().len;
+    let dlevs = ifile.root.dimensions.get("level").unwrap().len;
+    if var.name == "U" {
         println!("Destaggering U...");
-        let dtime = ifile.root.dimensions.get("time").unwrap().len;
-        let dlat =  ifile.root.dimensions.get("rlat").unwrap().len;
-        let dlon = ifile.root.dimensions.get("dlon").unwrap().len;
-         
-    } 
+        let dsrlon = ifile.root.dimensions.get("srlon").unwrap().len;
+        let udims = vec![
+            "time".to_owned(),
+            "level".to_owned(),
+            "rlat".to_owned(),
+            "rlon".to_owned(),
+        ];
+        let mut res_array: Array4<f64> =
+            ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
+        for ts in 0..dtime {
+            for lev in 0..dlevs {
+                let U = ifile.root.variables.get("U").unwrap();
+                let values: ArrayD<f64> =
+                    U.array_at(
+                        &[ts as usize, lev as usize, 0, 0],
+                        &[1, 1, dlat as usize, dsrlon as usize],
+                    ).unwrap();
+                let slice1 = values
+                    .clone()
+                    .slice_move(s![.., .., .., 0..(dsrlon - 1) as usize]);
+                let slice2 = values.slice_move(s![.., .., .., 1..dsrlon as usize]);
+                let destag = (slice1 + slice2) * 0.5;
+                res_array.slice_mut(s![(ts as usize)..ts as usize, (lev as usize)..lev as usize,..,1..]).assign(&destag);
+            }
+        }
+        ofile.root.add_variable_with_fill_value(
+            "U_destag",
+            &udims,
+            &res_array,
+            1e-20,
+        )?
+    } else if var.name == "V" {
+        println!("Destaggering V...");
+        let dsrlat = ifile.root.dimensions.get("srlat").unwrap().len;
+        println!("{} {} {}", dtime, dlat, dlon);
+        let vdims = vec![
+            "time".to_owned(),
+            "level".to_owned(),
+            "rlat".to_owned(),
+            "rlon".to_owned(),
+        ];
+        let res_array: Array4<f64> =
+            ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
+
+        ofile.root.add_variable_with_fill_value(
+            "V_destag",
+            &vdims,
+            &vec![0.; var.len as usize],
+            1e-20,
+        )?;
+        for ts in 0..dtime {
+            for lev in 0..dlevs {
+                let V = ifile.root.variables.get("V").unwrap();
+                let values: ArrayD<f64> =
+                    V.array_at(
+                        &[ts as usize, lev as usize, 0, 0],
+                        &[1, 1, dsrlat as usize, dlon as usize],
+                    ).unwrap();
+                let slice1 = values
+                    .clone()
+                    .slice_move(s![.., .., 0..(dsrlat - 1) as usize, ..]);
+                let slice2 = values.slice_move(s![.., .., 1..dsrlat as usize, ..]);
+                let destag = (slice1 + slice2) * 0.5;
+                println!("{:?}", destag.shape());
+            }
+        }
+    }
     Ok(())
 }
-
 
 fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
     for (k, var) in &ifile.root.variables {
         println!("Working on {}", k);
         let mut dimvec = vec![];
-        if k == "U" || k == "V"{
+        if k == "U" || k == "V" {
             destagger_var(ifile, ofile, var)?
         } else {
-        for dim in &var.dimensions {
-            dimvec.push(dim.name.clone());
-        }
-        write_variable(ofile, &dimvec, var, k)?
+            for dim in &var.dimensions {
+                dimvec.push(dim.name.clone());
+            }
+            write_variable(ofile, &dimvec, var, k)?
         }
     }
     Ok(())
