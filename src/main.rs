@@ -246,6 +246,7 @@ fn destagger_var(
         ];
         let mut res_array: Array4<f64> =
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
+        println!("{:?}", res_array.shape());
         for ts in 0..dtime {
             for lev in 0..dlevs {
                 let U = ifile.root.variables.get("U").unwrap();
@@ -259,19 +260,26 @@ fn destagger_var(
                     .slice_move(s![.., .., .., 0..(dsrlon - 1) as usize]);
                 let slice2 = values.slice_move(s![.., .., .., 1..dsrlon as usize]);
                 let destag = (slice1 + slice2) * 0.5;
-                res_array.slice_mut(s![(ts as usize)..ts as usize, (lev as usize)..lev as usize,..,1..]).assign(&destag);
+                //println!("{:?}", destag);
+                res_array
+                    .slice_mut(s![
+                        (ts as usize)..ts as usize,
+                        (lev as usize)..lev as usize,
+                        ..,
+                        1..
+                    ])
+                    .assign(&destag);
+                //println!("{:?}", res_array);
             }
         }
-        ofile.root.add_variable_with_fill_value(
-            "U_destag",
-            &udims,
-            &res_array,
-            1e-20,
-        )?
+        let res_vec = res_array.into_raw_vec();
+        ofile
+            .root
+            .add_variable_with_fill_value("U_destag", &udims, &res_vec, 1e-20)?
     } else if var.name == "V" {
         println!("Destaggering V...");
         let dsrlat = ifile.root.dimensions.get("srlat").unwrap().len;
-        println!("{} {} {}", dtime, dlat, dlon);
+        //println!("{} {} {}", dtime, dlat, dlon);
         let vdims = vec![
             "time".to_owned(),
             "level".to_owned(),
@@ -281,12 +289,6 @@ fn destagger_var(
         let res_array: Array4<f64> =
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
 
-        ofile.root.add_variable_with_fill_value(
-            "V_destag",
-            &vdims,
-            &vec![0.; var.len as usize],
-            1e-20,
-        )?;
         for ts in 0..dtime {
             for lev in 0..dlevs {
                 let V = ifile.root.variables.get("V").unwrap();
