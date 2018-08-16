@@ -455,13 +455,11 @@ fn main() {
                 .index(1),
         )
         .get_matches();
-    let globpattern = matches.value_of("INPUT").unwrap();
     let verbosity = matches.is_present("v");
     let mut pathVec = vec::Vec::new();
-    for entry in glob(globpattern).unwrap() {
-        match entry {
-            Ok(path) => pathVec.push(path.to_str().unwrap().to_owned()),
-            Err(e) => println!("{:?}", e),
+    if let Some(in_v) = matches.values_of("INPUT") {
+        for in_file in in_v {
+            pathVec.push(in_file);
         }
     }
 
