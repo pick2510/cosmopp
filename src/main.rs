@@ -419,7 +419,7 @@ fn process_file(ipath: &str, opath: &str) {
     };
 }
 
-fn parallel_work(entry: &str) {
+fn worker(entry: &str) {
     let tmpfile = &entry;
     let tmppath = path::Path::new(entry);
     if tmppath.extension().unwrap() != "nc" {
@@ -434,18 +434,25 @@ fn main() {
     let matches = App::new("Destagger Cosmo Grids")
         .version("1.0")
         .author("Dominik Strebel <dominik.strebel@empa.ch>")
-        .about("Does awesome things\nDestagger COSMO grids")
+        .about("Des awesome things\nDestagger COSMO grids")
         .arg(
-            Arg::with_name("INPUT")
-                .help("Sets the input file to use")
-                .required(true)
-                .index(1),
+            Arg::with_name("p")
+                .short("p")
+                .multiple(false)
+                .help("Parallel version"),
         )
         .arg(
             Arg::with_name("v")
                 .short("v")
                 .multiple(true)
                 .help("Sets the level of verbosity"),
+        )
+        .arg(
+            Arg::with_name("INPUT")
+                .help("Sets the input file to use")
+                .required(true)
+                .multiple(true)
+                .index(1),
         )
         .get_matches();
     let globpattern = matches.value_of("INPUT").unwrap();
@@ -458,5 +465,10 @@ fn main() {
         }
     }
 
-    pathVec.par_iter().for_each(|entry| parallel_work(&entry));
+    if matches.is_present("p") {
+        pathVec.par_iter().for_each(|entry| worker(&entry));
+    } else {
+        pathVec.iter().for_each(|entry| worker(&entry));
+    }
+
 }
