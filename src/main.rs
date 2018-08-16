@@ -246,36 +246,33 @@ fn destagger_var(
         ];
         let mut res_array: Array4<f64> =
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
-        println!("{:?}", res_array.shape());
+        res_array.fill(-1e-20);
         for ts in 0..dtime {
+            println!("Timestep: {}", ts);
             for lev in 0..dlevs {
-                let U = ifile.root.variables.get("U").unwrap();
+                println!("Level: {}", lev);
                 let values: ArrayD<f64> =
-                    U.array_at(
+                    var.array_at(
                         &[ts as usize, lev as usize, 0, 0],
                         &[1, 1, dlat as usize, dsrlon as usize],
                     ).unwrap();
                 let slice1 = values
                     .clone()
-                    .slice_move(s![.., .., .., 0..(dsrlon - 1) as usize]);
-                let slice2 = values.slice_move(s![.., .., .., 1..dsrlon as usize]);
+                    .slice_move(s![0, 0, .., 0..(dsrlon - 1) as usize]);
+                let slice2 = values.slice_move(s![0, 0, .., 1..dsrlon as usize]);
                 let destag = (slice1 + slice2) * 0.5;
                 //println!("{:?}", destag);
                 res_array
-                    .slice_mut(s![
-                        (ts as usize)..ts as usize,
-                        (lev as usize)..lev as usize,
-                        ..,
-                        1..
-                    ])
+                    .slice_mut(s![ts as usize, lev as usize, .., 1..])
                     .assign(&destag);
-                //println!("{:?}", res_array);
             }
         }
-        let res_vec = res_array.into_raw_vec();
-        ofile
-            .root
-            .add_variable_with_fill_value("U_destag", &udims, &res_vec, 1e-20)?
+        ofile.root.add_variable_with_fill_value(
+            "U_destag",
+            &udims,
+            &res_array.into_raw_vec(),
+            1e-20,
+        )?
     } else if var.name == "V" {
         println!("Destaggering V...");
         let dsrlat = ifile.root.dimensions.get("srlat").unwrap().len;
@@ -286,25 +283,35 @@ fn destagger_var(
             "rlat".to_owned(),
             "rlon".to_owned(),
         ];
-        let res_array: Array4<f64> =
+        let mut res_array: Array4<f64> =
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
-
+        res_array.fill(-1e-20);
         for ts in 0..dtime {
+            println!("Timestep: {}", ts);
             for lev in 0..dlevs {
-                let V = ifile.root.variables.get("V").unwrap();
+                println!("Level: {}", lev);
                 let values: ArrayD<f64> =
-                    V.array_at(
+                    var.array_at(
                         &[ts as usize, lev as usize, 0, 0],
                         &[1, 1, dsrlat as usize, dlon as usize],
                     ).unwrap();
                 let slice1 = values
                     .clone()
-                    .slice_move(s![.., .., 0..(dsrlat - 1) as usize, ..]);
-                let slice2 = values.slice_move(s![.., .., 1..dsrlat as usize, ..]);
+                    .slice_move(s![0, 0, 0..(dsrlat - 1) as usize, ..]);
+                let slice2 = values.slice_move(s![0, 0, 1..dsrlat as usize, ..]);
                 let destag = (slice1 + slice2) * 0.5;
-                println!("{:?}", destag.shape());
+                res_array
+                    .slice_mut(s![ts as usize, lev as usize, 1.., ..])
+                    .assign(&destag);
             }
         }
+        ofile.root.add_variable_with_fill_value(
+            "V_destag",
+            &vdims,
+            &res_array.into_raw_vec(),
+            -1e-20,
+        )?;
+     
     }
     Ok(())
 }
