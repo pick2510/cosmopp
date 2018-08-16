@@ -2,12 +2,14 @@
 extern crate clap;
 extern crate glob;
 extern crate netcdf;
+extern crate rayon;
 #[macro_use]
 extern crate ndarray;
 use clap::{App, Arg};
 use glob::{glob, Paths};
 use ndarray::{Array, Array4, ArrayD, ArrayViewD};
-use std::{str, string, vec};
+use rayon::prelude::*;
+use std::{path, str, string, vec};
 
 fn write_attributes(
     ofile: &mut netcdf::file::File,
@@ -311,7 +313,6 @@ fn destagger_var(
             &res_array.into_raw_vec(),
             -1e-20,
         )?;
-     
     }
     Ok(())
 }
@@ -418,6 +419,17 @@ fn process_file(ipath: &str, opath: &str) {
     };
 }
 
+fn parallel_work(entry: &str) {
+    let tmpfile = &entry;
+    let tmppath = path::Path::new(entry);
+    if tmppath.extension().unwrap() != "nc" {
+        println!("netCDF file needed, continue");
+        return;
+    }
+    let ofile = tmpfile.replace(".nc", "_destagger.nc");
+    process_file(&entry, &ofile);
+}
+
 fn main() {
     let matches = App::new("Destagger Cosmo Grids")
         .version("1.0")
@@ -441,18 +453,10 @@ fn main() {
     let mut pathVec = vec::Vec::new();
     for entry in glob(globpattern).unwrap() {
         match entry {
-            Ok(path) => pathVec.push(path),
+            Ok(path) => pathVec.push(path.to_str().unwrap().to_owned()),
             Err(e) => println!("{:?}", e),
         }
     }
-    println!("{:?}, {:?}", pathVec, verbosity);
-    for entry in &pathVec {
-        let tmpfile = entry.to_str().unwrap();
-        if entry.extension().unwrap() != "nc" {
-            println!("netCDF file needed, continue");
-            continue;
-        }
-        let ofile = tmpfile.replace(".nc", "_destagger.nc");
-        process_file(entry.to_str().unwrap(), &ofile);
-    }
+
+    pathVec.par_iter().for_each(|entry| parallel_work(&entry));
 }
