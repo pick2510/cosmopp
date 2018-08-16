@@ -329,6 +329,64 @@ fn destagger_var(
     Ok(())
 }
 
+fn calc_wind_mag(ofile: &mut netcdf::file::File, verbosity: &bool) -> Result<(), String> {
+    if *verbosity {
+        println!("Calculate magnitude of windspeed on each level.. ");
+    }
+    let dtime = ofile.root.dimensions.get("time").unwrap().len;
+    let dlat = ofile.root.dimensions.get("rlat").unwrap().len;
+    let dlon = ofile.root.dimensions.get("rlon").unwrap().len;
+    let dlevs = ofile.root.dimensions.get("level").unwrap().len;
+    let magdims = vec![
+        "time".to_owned(),
+        "level".to_owned(),
+        "rlat".to_owned(),
+        "rlon".to_owned(),
+    ];
+    let mut res_array: Array4<f64> =
+        ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
+    res_array.fill(-1e-20);
+    {
+        let u_destag = ofile.root.variables.get("U_destag").unwrap();
+        let v_destag = ofile.root.variables.get("V_destag").unwrap();
+
+        for ts in 0..dtime {
+            if *verbosity {
+                println!("Timestep: {}", ts);
+            }
+            for lev in 0..dlevs {
+                if *verbosity {
+                    println!("Level: {}", lev);
+                }
+                let u_values: ArrayD<f64> = u_destag
+                    .array_at(
+                        &[ts as usize, lev as usize, 0, 0],
+                        &[1, 1, dlat as usize, dlon as usize],
+                    )
+                    .unwrap();
+                let v_values: ArrayD<f64> = v_destag
+                    .array_at(
+                        &[ts as usize, lev as usize, 0, 0],
+                        &[1, 1, dlat as usize, dlon as usize],
+                    )
+                    .unwrap();
+                let uslice = u_values.slice_move(s![0, 0, .., ..]);
+                let vslice = v_values.slice_move(s![0, 0, .., ..]);
+                let w_mag =
+                    (uslice.mapv(|x| x.powi(2)) + vslice.mapv(|x| x.powi(2))).mapv(f64::sqrt);
+                res_array
+                    .slice_mut(s![ts as usize, lev as usize, .., ..])
+                    .assign(&w_mag);
+            }
+        }
+    }
+
+    ofile
+        .root
+        .add_variable_with_fill_value("Wind_Mag", &magdims, &res_array.into_raw_vec(), -1e-20)?;
+    Ok(())
+}
+
 fn process_vars(
     ifile: &netcdf::file::File,
     ofile: &mut netcdf::file::File,
@@ -339,12 +397,12 @@ fn process_vars(
             println!("Working on {}", k);
         }
         let mut dimvec = vec![];
+        for dim in &var.dimensions {
+            dimvec.push(dim.name.clone());
+        }
         if k == "U" || k == "V" {
             destagger_var(ifile, ofile, var, verbosity)?
         } else {
-            for dim in &var.dimensions {
-                dimvec.push(dim.name.clone());
-            }
             write_variable(ofile, &dimvec, var, k)?
         }
     }
@@ -356,7 +414,7 @@ fn write_dimensions(
     ofile: &mut netcdf::file::File,
 ) -> Result<(), String> {
     for (name, dim) in &ifile.root.dimensions {
-        match ofile.root.add_dimension(&dim.name, dim.len) {
+        match ofile.root.add_dimension(&name, dim.len) {
             Err(e) => return Err(e),
             Ok(()) => {}
         };
@@ -413,7 +471,7 @@ fn write_global_attributes(
     Ok(())
 }
 
-fn process_file(ipath: &str, opath: &str, verbosity: &bool) {
+fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
     let ifile = match netcdf::open(ipath) {
         Ok(ifile) => ifile,
         Err(_) => panic!("No netcdf file: {:?}", ipath),
@@ -442,12 +500,18 @@ fn process_file(ipath: &str, opath: &str, verbosity: &bool) {
         Err(e) => panic!("Something went wrong: {}!", e),
     };
     match process_vars(&ifile, &mut ofile, &verbosity) {
-        Ok(()) => println!("Finished {:?}", ifile.name),
+        Ok(()) => {}
         Err(e) => panic!("{}", e),
     };
+    if *w_mag && ofile.root.variables.contains_key("U_destag") {
+        match calc_wind_mag(&mut ofile, &verbosity) {
+            Ok(()) => println!("Finished {}", ifile.name),
+            Err(e) => panic!("{}", e),
+        }
+    }
 }
 
-fn worker(entry: &str, verbosity: &bool) {
+fn worker(entry: &str, verbosity: &bool, w_mag: &bool) {
     let tmpfile = &entry;
     let tmppath = path::Path::new(entry);
     if tmppath.extension().unwrap() != "nc" {
@@ -455,7 +519,7 @@ fn worker(entry: &str, verbosity: &bool) {
         return;
     }
     let ofile = tmpfile.replace(".nc", "_destagger.nc");
-    process_file(&entry, &ofile, &verbosity);
+    process_file(&entry, &ofile, &verbosity, &w_mag);
 }
 
 fn main() {
@@ -468,6 +532,12 @@ fn main() {
                 .short("p")
                 .multiple(false)
                 .help("Parallel version"),
+        )
+        .arg(
+            Arg::with_name("m")
+                .short("m")
+                .multiple(false)
+                .help("Calc magnitude of windspeed"),
         )
         .arg(
             Arg::with_name("v")
@@ -484,6 +554,7 @@ fn main() {
         )
         .get_matches();
     let verbosity = matches.is_present("v");
+    let calc_magnitude = matches.is_present("m");
     let mut pathVec = vec::Vec::new();
     if let Some(in_v) = matches.values_of("INPUT") {
         for in_file in in_v {
@@ -494,8 +565,10 @@ fn main() {
     if matches.is_present("p") {
         pathVec
             .par_iter()
-            .for_each(|entry| worker(&entry, &verbosity));
+            .for_each(|entry| worker(&entry, &verbosity, &calc_magnitude));
     } else {
-        pathVec.iter().for_each(|entry| worker(&entry, &verbosity));
+        pathVec
+            .iter()
+            .for_each(|entry| worker(&entry, &verbosity, &calc_magnitude));
     }
 }
