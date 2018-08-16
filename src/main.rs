@@ -232,13 +232,16 @@ fn destagger_var(
     ifile: &netcdf::file::File,
     ofile: &mut netcdf::file::File,
     var: &netcdf::variable::Variable,
+    verbosity: &bool,
 ) -> Result<(), String> {
     let dtime = ifile.root.dimensions.get("time").unwrap().len;
     let dlat = ifile.root.dimensions.get("rlat").unwrap().len;
     let dlon = ifile.root.dimensions.get("rlon").unwrap().len;
     let dlevs = ifile.root.dimensions.get("level").unwrap().len;
     if var.name == "U" {
-        println!("Destaggering U...");
+        if *verbosity {
+            println!("Destaggering U...");
+        }
         let dsrlon = ifile.root.dimensions.get("srlon").unwrap().len;
         let udims = vec![
             "time".to_owned(),
@@ -250,9 +253,13 @@ fn destagger_var(
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
         res_array.fill(-1e-20);
         for ts in 0..dtime {
-            println!("Timestep: {}", ts);
+            if *verbosity {
+                println!("Timestep: {}", ts);
+            }
             for lev in 0..dlevs {
-                println!("Level: {}", lev);
+                if *verbosity {
+                    println!("Level: {}", lev);
+                }
                 let values: ArrayD<f64> =
                     var.array_at(
                         &[ts as usize, lev as usize, 0, 0],
@@ -263,7 +270,6 @@ fn destagger_var(
                     .slice_move(s![0, 0, .., 0..(dsrlon - 1) as usize]);
                 let slice2 = values.slice_move(s![0, 0, .., 1..dsrlon as usize]);
                 let destag = (slice1 + slice2) * 0.5;
-                //println!("{:?}", destag);
                 res_array
                     .slice_mut(s![ts as usize, lev as usize, .., 1..])
                     .assign(&destag);
@@ -276,7 +282,9 @@ fn destagger_var(
             1e-20,
         )?
     } else if var.name == "V" {
-        println!("Destaggering V...");
+        if *verbosity {
+            println!("Destaggering V...");
+        }
         let dsrlat = ifile.root.dimensions.get("srlat").unwrap().len;
         //println!("{} {} {}", dtime, dlat, dlon);
         let vdims = vec![
@@ -289,9 +297,13 @@ fn destagger_var(
             ndarray::Array::zeros((dtime as usize, dlevs as usize, dlat as usize, dlon as usize));
         res_array.fill(-1e-20);
         for ts in 0..dtime {
-            println!("Timestep: {}", ts);
+            if *verbosity {
+                println!("Timestep: {}", ts);
+            }
             for lev in 0..dlevs {
-                println!("Level: {}", lev);
+                if *verbosity {
+                    println!("Level: {}", lev);
+                }
                 let values: ArrayD<f64> =
                     var.array_at(
                         &[ts as usize, lev as usize, 0, 0],
@@ -317,12 +329,18 @@ fn destagger_var(
     Ok(())
 }
 
-fn process_vars(ifile: &netcdf::file::File, ofile: &mut netcdf::file::File) -> Result<(), String> {
+fn process_vars(
+    ifile: &netcdf::file::File,
+    ofile: &mut netcdf::file::File,
+    verbosity: &bool,
+) -> Result<(), String> {
     for (k, var) in &ifile.root.variables {
-        println!("Working on {}", k);
+        if *verbosity {
+            println!("Working on {}", k);
+        }
         let mut dimvec = vec![];
         if k == "U" || k == "V" {
-            destagger_var(ifile, ofile, var)?
+            destagger_var(ifile, ofile, var, verbosity)?
         } else {
             for dim in &var.dimensions {
                 dimvec.push(dim.name.clone());
@@ -395,31 +413,41 @@ fn write_global_attributes(
     Ok(())
 }
 
-fn process_file(ipath: &str, opath: &str) {
+fn process_file(ipath: &str, opath: &str, verbosity: &bool) {
     let ifile = match netcdf::open(ipath) {
         Ok(ifile) => ifile,
         Err(_) => panic!("No netcdf file: {:?}", ipath),
     };
-    println!("{:?} {:?}", ipath, opath);
+    if *verbosity {
+        println!("{:?} {:?}", ipath, opath);
+    }
     let mut ofile = match netcdf::create(opath) {
         Ok(ofile) => ofile,
         Err(e) => panic!("Couldn't create file {:?} {:?}", opath, e),
     };
     match write_global_attributes(&ifile, &mut ofile) {
-        Ok(()) => println!("Wrote global variables"),
+        Ok(()) => {
+            if *verbosity {
+                println!("Wrote global variables")
+            }
+        }
         Err(e) => panic!("Something went wrong: {}!", e),
     };
     match write_dimensions(&ifile, &mut ofile) {
-        Ok(()) => println!("Defined dims..."),
+        Ok(()) => {
+            if *verbosity {
+                println!("Defined dims...")
+            }
+        }
         Err(e) => panic!("Something went wrong: {}!", e),
     };
-    match process_vars(&ifile, &mut ofile) {
-        Ok(()) => println!("Processed vars"),
+    match process_vars(&ifile, &mut ofile, &verbosity) {
+        Ok(()) => println!("Finished {:?}", ifile.name),
         Err(e) => panic!("{}", e),
     };
 }
 
-fn worker(entry: &str) {
+fn worker(entry: &str, verbosity: &bool) {
     let tmpfile = &entry;
     let tmppath = path::Path::new(entry);
     if tmppath.extension().unwrap() != "nc" {
@@ -427,12 +455,12 @@ fn worker(entry: &str) {
         return;
     }
     let ofile = tmpfile.replace(".nc", "_destagger.nc");
-    process_file(&entry, &ofile);
+    process_file(&entry, &ofile, &verbosity);
 }
 
 fn main() {
-    let matches = App::new("Destagger Cosmo Grids")
-        .version("1.0")
+    let matches = App::new("Destagger cosmo netCDF files")
+        .version("0.2")
         .author("Dominik Strebel <dominik.strebel@empa.ch>")
         .about("Des awesome things\nDestagger COSMO grids")
         .arg(
@@ -464,9 +492,10 @@ fn main() {
     }
 
     if matches.is_present("p") {
-        pathVec.par_iter().for_each(|entry| worker(&entry));
+        pathVec
+            .par_iter()
+            .for_each(|entry| worker(&entry, &verbosity));
     } else {
-        pathVec.iter().for_each(|entry| worker(&entry));
+        pathVec.iter().for_each(|entry| worker(&entry, &verbosity));
     }
-
 }
