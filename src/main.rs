@@ -42,12 +42,14 @@ fn process_vars(
 }
 
 
-fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
+fn process_file(ipath: &str, opath: &str, matches: &clap::ArgMatches) {
+    let verbosity = matches.is_present("v");
+    let w_mag = matches.is_present("m");
     let ifile = match netcdf::open(ipath) {
         Ok(ifile) => ifile,
         Err(_) => panic!("No netcdf file: {:?}", ipath),
     };
-    if *verbosity {
+    if verbosity { 
         println!("{:?} {:?}", ipath, opath);
     }
     let mut ofile = match netcdf::create(opath) {
@@ -56,7 +58,7 @@ fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
     };
     match write_global_attributes(&ifile, &mut ofile) {
         Ok(()) => {
-            if *verbosity {
+            if verbosity {
                 println!("Wrote global variables")
             }
         }
@@ -64,7 +66,7 @@ fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
     };
     match write_dimensions(&ifile, &mut ofile) {
         Ok(()) => {
-            if *verbosity {
+            if verbosity {
                 println!("Defined dims...")
             }
         }
@@ -74,7 +76,7 @@ fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
         Ok(()) => {}
         Err(e) => panic!("{}", e),
     };
-    if *w_mag && ofile.root.variables.contains_key("U_destag") {
+    if w_mag && ofile.root.variables.contains_key("U_destag") {
         match calc_wind_mag(&mut ofile, &verbosity) {
             Ok(()) => println!("Finished {}", ifile.name),
             Err(e) => panic!("{}", e),
@@ -82,7 +84,7 @@ fn process_file(ipath: &str, opath: &str, verbosity: &bool, w_mag: &bool) {
     }
 }
 
-fn worker(entry: &str, verbosity: &bool, w_mag: &bool) {
+fn worker(entry: &str, matches: &clap::ArgMatches) {
     let tmpfile = &entry;
     let tmppath = path::Path::new(entry);
     if tmppath.extension().unwrap() != "nc" {
@@ -90,11 +92,11 @@ fn worker(entry: &str, verbosity: &bool, w_mag: &bool) {
         return;
     }
     let ofile = tmpfile.replace(".nc", "_destagger.nc");
-    process_file(&entry, &ofile, &verbosity, &w_mag);
+    process_file(&entry, &ofile, matches);
 }
 
 fn main() {
-    let matches = App::new("Destagger cosmo netCDF files")
+    let matches = App::new("D")
         .version("0.2")
         .author("Dominik Strebel <dominik.strebel@empa.ch>")
         .about("Des awesome things\nDestagger COSMO grids")
@@ -104,6 +106,18 @@ fn main() {
                 .multiple(false)
                 .help("Parallel version"),
         )
+        .arg(
+            Arg::with_name("d")
+                .short("d")
+                .multiple(false)
+                .help("Destagger U and V"),
+        )
+        .arg(
+            Arg::with_name("h")
+                .short("h")
+                .multiple(false)
+                .help("Interpolate level data to height"),
+        ) 
         .arg(
             Arg::with_name("m")
                 .short("m")
@@ -124,22 +138,20 @@ fn main() {
                 .index(1),
         )
         .get_matches();
-    let verbosity = matches.is_present("v");
-    let calc_magnitude = matches.is_present("m");
-    let mut pathVec = vec::Vec::new();
+    let mut path_vec = vec::Vec::new();
     if let Some(in_v) = matches.values_of("INPUT") {
         for in_file in in_v {
-            pathVec.push(in_file);
+            path_vec.push(in_file);
         }
     }
 
     if matches.is_present("p") {
-        pathVec
+        path_vec
             .par_iter()
-            .for_each(|entry| worker(&entry, &verbosity, &calc_magnitude));
+            .for_each(|entry| worker(&entry, &matches));
     } else {
-        pathVec
+        path_vec
             .iter()
-            .for_each(|entry| worker(&entry, &verbosity, &calc_magnitude));
+            .for_each(|entry| worker(&entry, &matches));
     }
 }
