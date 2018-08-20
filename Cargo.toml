@@ -1,5 +1,5 @@
 [package]
-name = "COSMOPP"
+name = "cosmopp"
 version = "0.1.1"
 authors = ["Strebel, Dominik <dominik.strebel@empa.ch>"]
 
