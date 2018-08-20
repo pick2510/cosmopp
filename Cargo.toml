@@ -1,6 +1,6 @@
 [package]
-name = "destagger"
-version = "0.1.0"
+name = "COSMOPP"
+version = "0.1.1"
 authors = ["Strebel, Dominik <dominik.strebel@empa.ch>"]
 
 [dependencies]
